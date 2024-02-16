@@ -1,6 +1,6 @@
 # simplestore
 
-Typesafe, Proxied, Subscribable object store
+Typed, subscribe-able object store
 
 ##
 
