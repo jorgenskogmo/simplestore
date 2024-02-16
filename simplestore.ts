@@ -1,27 +1,38 @@
-// TODO: Type .addEventListener / .removeEventListener to only auto-complete to EVENT_TYPE
-const EVENT_NAME = "changed";
-
-export class StoreChangedEvent<T> extends Event {
-	detail: T;
-	constructor(store: T) {
-		super(EVENT_NAME);
-		this.detail = store;
-	}
+interface StoreEventMap {
+	changed: CustomEvent;
 }
 
-export class Store<T> extends EventTarget {
-	#store;
+interface StoreEventTarget extends EventTarget {
+	addEventListener<K extends keyof StoreEventMap>(
+		type: K,
+		listener: (ev: StoreEventMap[K]) => void,
+		options?: boolean | AddEventListenerOptions,
+	): void;
+	addEventListener(
+		type: string,
+		callback: EventListenerOrEventListenerObject | null,
+		options?: EventListenerOptions | boolean,
+	): void;
+}
+
+const typedEventTarget = EventTarget as {
+	new (): StoreEventTarget;
+	prototype: StoreEventTarget;
+};
+
+export class Store<T> extends typedEventTarget {
+	#store: T;
 
 	constructor(initialValues: T) {
 		super();
 		this.#store = initialValues;
 	}
 
-	get(): T {
+	public get(): T {
 		return this.#store;
 	}
 
-	set(newValues: Partial<T>): void {
+	public set(newValues: Partial<T>): void {
 		// console.log("-----");
 		// console.log("- new values: ", newValues);
 		// TODO: Consider (and document) merging strategy
@@ -31,10 +42,8 @@ export class Store<T> extends EventTarget {
 		this.#store = deepMerge(this.#store, newValues);
 		// console.log("- store: ", this.#store);
 
-		// this.dispatchEvent(new StoreChangedEvent<T>(this.#store));
-
 		this.dispatchEvent(
-			new CustomEvent<T>(EVENT_NAME, {
+			new CustomEvent("changed", {
 				detail: this.#store,
 			}),
 		);
@@ -55,9 +64,9 @@ export function subscribe<T>(
 	immediate = false,
 ): () => void {
 	const relay = () => cb(store.get());
-	store.addEventListener(EVENT_NAME, relay);
+	store.addEventListener("changed", relay);
 	if (immediate) store.set(store.get());
-	return () => store.removeEventListener(EVENT_NAME, relay);
+	return () => store.removeEventListener("changed", relay);
 }
 
 // ---
@@ -114,7 +123,10 @@ function deepMerge(...objs) {
 		// Otherwise, merge
 		/*if (type === "array") {
             clone = [...clone, ...structuredClone(obj)];
-        } else */ if (type === "object") {
+        } else if (type === "object") {
+			mergeObj(clone, obj);
+    */
+		if (type === "object") {
 			mergeObj(clone, obj);
 		} else {
 			clone = obj;

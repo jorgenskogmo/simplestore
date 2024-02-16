@@ -22,29 +22,29 @@ const store = observe<Store>({
 
 // listen to changes
 const unsubscribe0 = subscribe(store, (values) => {
-	console.log("@sub0", values);
+	// console.log("@sub0", values);
 });
 
 // listen to changes, immediate
 const unsubscribe1 = subscribe(
 	store,
 	(values) => {
-		console.log("@subs1", values);
+		// console.log("@subs1", values);
 	},
 	true,
 );
 
-// alternative:
+// Alternatives to subscribe():
 // listen to changed-event, manually grab current values
 store.addEventListener("changed", () => {
-	console.log("@subs2", store.get());
+	// console.log("@subs2", store.get());
 });
 
-// alternative:
-// listen to changed-event, use passed events
-store.addEventListener("changed", ((event: CustomEvent) => {
-	console.log("@subs3", event.detail);
-}) as EventListener);
+// listen to changed-event, use CustomEvent's detail prop
+// TODO: Would be awesome if we could avoid the 'CustomEvent<Store>' part!
+store.addEventListener("changed", (event: CustomEvent<Store>) => {
+	console.log("@subs3", event.detail.num);
+});
 
 store.set({ num: 2, str: "two", arr: [4, 5, 6] });
 
