@@ -1,77 +1,125 @@
-// Typesafe, Proxied, Subscribable object store
+// TODO: Type .addEventListener / .removeEventListener to only auto-complete to EVENT_TYPE
+const EVENT_NAME = "changed";
 
-interface SubscriptionsTracker {
-  subscribers: WeakMap<object, (v) => void>;
-  keys: Set<object>;
+export class StoreChangedEvent<T> extends Event {
+	detail: T;
+	constructor(store: T) {
+		super(EVENT_NAME);
+		this.detail = store;
+	}
 }
 
-// map a ID to a proxied-object
-const proxyIds = new Map();
+export class Store<T> extends EventTarget {
+	#store;
 
-// map a ID to a list of subscribers (GC'able) and list of keys (iteratable)
-const register: Map<string, SubscriptionsTracker> = new Map<
-  string,
-  SubscriptionsTracker
->();
+	constructor(initialValues: T) {
+		super();
+		this.#store = initialValues;
+	}
 
-export function proxy<T extends object>(obj: T): T {
-  const idx = `P${proxyIds.size}`;
-  console.log("creating proxy", idx);
+	get(): T {
+		return this.#store;
+	}
 
-  const proxied = new Proxy(obj, {
-    get: function (target, prop) {
-      return Reflect.get(target, prop);
-    },
-    set: function (target, prop, value) {
-      Reflect.set(target, prop, value);
-      // call all subscribers
-      let keys = register.get(idx).keys;
-      let subscribers = register.get(idx).subscribers;
-      keys.forEach((key) => {
-        if (!subscribers.has(key)) {
-          keys.delete(key);
-        } else {
-          subscribers.get(key)(target as T);
-        }
-      });
+	set(newValues: Partial<T>): void {
+		// console.log("-----");
+		// console.log("- new values: ", newValues);
+		// TODO: Consider (and document) merging strategy
+		// see: https://gist.github.com/ahtcx/0cd94e62691f539160b32ecda18af3d6
+		// this.#store = newValues;
+		// this.#store = { ...this.#store, ...newValues };
+		this.#store = deepMerge(this.#store, newValues);
+		// console.log("- store: ", this.#store);
 
-      return true;
-    },
-  });
+		// this.dispatchEvent(new StoreChangedEvent<T>(this.#store));
 
-  proxyIds.set(proxied, idx);
-
-  register.set(idx, {
-    subscribers: new WeakMap<object, (v: T) => void>(),
-    keys: new Set<object>(),
-  });
-
-  return proxied;
+		this.dispatchEvent(
+			new CustomEvent<T>(EVENT_NAME, {
+				detail: this.#store,
+			}),
+		);
+	}
 }
 
-function remove(idx: string, fn: (v: any) => void): void {
-  if (register.has(idx)) {
-    let keys = register.get(idx).keys;
-    let subscribers = register.get(idx).subscribers;
-    keys.forEach((key) => {
-      if (!subscribers.has(key)) {
-        keys.delete(key);
-      } else if (subscribers.get(key) === fn) {
-        subscribers.delete(key);
-        keys.delete(key);
-      }
-    });
-  }
+export function observe<T>(obj: T) {
+	return new Store<T>(obj);
 }
 
-export function subscribe<T>(store: T, fn: (values: T) => void): () => void {
-  const idx = proxyIds.get(store);
-  // let key = {};
-  let key = fn;
-  register.get(idx).keys.add(key);
-  register.get(idx).subscribers.set(key, fn);
+/** @returns function to unsubscribe */
+export function subscribe<T>(
+	// pointer to observed object
+	store: Store<T>,
+	/** function to be called when values change */
+	cb: (values: T) => void,
+	/** if true, the subscribers callback will be called with current values of the store immediately  */
+	immediate = false,
+): () => void {
+	const relay = () => cb(store.get());
+	store.addEventListener(EVENT_NAME, relay);
+	if (immediate) store.set(store.get());
+	return () => store.removeEventListener(EVENT_NAME, relay);
+}
 
-  return () => {
-    remove(idx, fn);
-  };
+// ---
+
+/**
+ * Deep merge two or more objects or arrays.
+ * (c) Chris Ferdinandi, MIT License, https://gomakethings.com
+ * @param   {*} ...objs  The arrays or objects to merge
+ * @returns {*}          The merged arrays or objects
+ */
+function deepMerge(...objs) {
+	/**
+	 * Get the object type
+	 * @param  {*}       obj The object
+	 * @return {String}      The object type
+	 */
+	function getType(obj) {
+		return Object.prototype.toString.call(obj).slice(8, -1).toLowerCase();
+	}
+
+	/**
+	 * Deep merge two objects
+	 * @return {Object}
+	 */
+	function mergeObj(clone, obj) {
+		for (const [key, value] of Object.entries(obj)) {
+			const type = getType(value);
+			if (
+				clone[key] !== undefined &&
+				getType(clone[key]) === type &&
+				["array", "object"].includes(type)
+			) {
+				clone[key] = deepMerge(clone[key], value);
+			} else {
+				clone[key] = structuredClone(value);
+			}
+		}
+	}
+
+	// Create a clone of the first item in the objs array
+	let clone = structuredClone(objs.shift());
+
+	// Loop through each item
+	for (const obj of objs) {
+		// Get the object type
+		const type = getType(obj);
+
+		// If the current item isn't the same type as the clone, replace it
+		if (getType(clone) !== type) {
+			clone = structuredClone(obj);
+			continue;
+		}
+
+		// Otherwise, merge
+		/*if (type === "array") {
+            clone = [...clone, ...structuredClone(obj)];
+        } else */ if (type === "object") {
+			mergeObj(clone, obj);
+		} else {
+			clone = obj;
+		}
+	}
+
+	return clone;
 }

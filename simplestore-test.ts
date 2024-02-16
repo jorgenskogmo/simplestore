@@ -1,98 +1,61 @@
-import { proxy, subscribe } from "./simplestore";
+import { observe, subscribe } from "./simplestore";
 
+// define Store type
 interface Store {
-  num: number;
-  str: string;
-  arr: number[];
+	num: number;
+	str: string;
+	arr: number[];
+	obj: object;
+	objs: object;
+	substore: Partial<Store>;
 }
 
-const store = proxy<Store>({
-  num: 1,
-  str: "one",
-  arr: [1, 2, 3],
+// create an observable with initial values
+const store = observe<Store>({
+	num: 1,
+	str: "one",
+	arr: [1, 2, 3],
+	obj: { x: 1, y: 1, z: 1 },
+	objs: { a: { name: "js" }, b: { obj: { name: "nested" } } },
+	substore: { num: 100 },
 });
 
-const logValues = (values) => {
-  console.log("logValues", values);
-};
-
-//
-
-console.log("@initial values", store);
-
-// getter
-
-console.log("store.num:", store.num);
-
-// subscribe
-
-subscribe(store, (values) => {
-  console.log("@subs", values);
-});
-
+// listen to changes
 const unsubscribe0 = subscribe(store, (values) => {
-  console.log("@subs0", values);
+	console.log("@sub0", values);
 });
 
-const unsubscribe1 = subscribe(store, (values) => {
-  console.log("@subs1", values);
+// listen to changes, immediate
+const unsubscribe1 = subscribe(
+	store,
+	(values) => {
+		console.log("@subs1", values);
+	},
+	true,
+);
+
+// alternative:
+// listen to changed-event, manually grab current values
+store.addEventListener("changed", () => {
+	console.log("@subs2", store.get());
 });
 
-console.log("setting store.str to 'two', 3 subscribers should react");
-store.str = "two";
+// alternative:
+// listen to changed-event, use passed events
+store.addEventListener("changed", ((event: CustomEvent) => {
+	console.log("@subs3", event.detail);
+}) as EventListener);
 
-// unsubscribe
+store.set({ num: 2, str: "two", arr: [4, 5, 6] });
 
-console.log("unsubscribing 'subs0' ");
-unsubscribe0();
+// unsubscribe0();
 
-console.log("unsubscribing 'subs1' ");
-unsubscribe1();
+// store.set({ num: 3, obj: { y: 2, z: 3 } });
 
-console.log("setting store.str to 'three', 1 subscribers should react");
-store.str = "three";
+// store.set({ num: 4, objs: { a: { name: "js2" }, c: "cee" } });
 
-// unique subscriptions
+// store.set({ num: 5, substore: { num: 200, str: "alo" } });
 
-subscribe(store, logValues);
-subscribe(store, logValues);
+// unsubscribe1();
 
-console.log("setting store.arr to [4,5,6], 2 subscribers should react");
-store.arr = [4, 5, 6];
-
-// subscrible from within class
-class Foo {
-  id: string;
-  unsub: () => void;
-
-  constructor() {
-    this.id = "alo";
-    this.unsub = subscribe(store, (values) => {
-      console.log("@Foo sub", this.id, "values:", values);
-    });
-  }
-}
-
-let a = new Foo();
-
-console.log("setting store.num to 5, 3 subscribers should react");
-store.num = 5;
-
-// (attempt) to delete the class instance, to see if the weakmap discards its subscription
-
-console.log("nulling Foo/a");
-a = null;
-a = undefined;
-console.log("a (Foo instance):", a);
-
-console.log("setting store.num to 6, 2 subscribers should react");
-store.num = 6;
-
-// !!! But there is 3 reactions... Foo/a seems still alive
-
-// Maybe just give the GC some time? Nope.
-setTimeout(() => {
-  console.log("timeout");
-  console.log("a:", a);
-  store.num = 7;
-}, 500);
+// store.set({ str: "no more listeners" });
